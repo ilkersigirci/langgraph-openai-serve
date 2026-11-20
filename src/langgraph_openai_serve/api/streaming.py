@@ -9,6 +9,7 @@ is still consuming it.
 
 import json
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator
+from contextlib import AsyncExitStack
 from itertools import count, repeat
 
 from anyio import CancelScope, EndOfStream, move_on_after
@@ -50,8 +51,7 @@ class StreamOwner:
 
     def __init__(self, keepalive_interval: float = _KEEPALIVE_INTERVAL) -> None:
         self._keepalive_interval = keepalive_interval
-        self._stream: TaskStream[str] | None = None
-        self._run: GraphRun | None = None
+        self._resources = AsyncExitStack()
 
     def start(
         self,
@@ -59,7 +59,8 @@ class StreamOwner:
         run: GraphRun,
     ) -> StreamingResponse:
         """Stream ``source`` as SSE and close ``run`` when the request ends."""
-        self._run = run
+        # The graph may already hold a lease even if the producer never starts.
+        self._resources.push_async_callback(run.aclose)
         return self._response(source, repeat(_KEEPALIVE))
 
     def follow(self, source: AsyncGenerator[str, None]) -> StreamingResponse:
@@ -69,9 +70,10 @@ class StreamOwner:
     def _response(
         self, source: AsyncGenerator[str, None], keepalives: Iterator[str]
     ) -> StreamingResponse:
-        self._stream = TaskStream(source, name="openai-response-stream")
+        stream = TaskStream(source, name="openai-response-stream")
+        self._resources.push_async_callback(stream.aclose)
         return StreamingResponse(
-            self._with_keepalive(self._stream.receive, keepalives),
+            self._with_keepalive(stream.receive, keepalives),
             media_type="text/event-stream",
             headers=_SSE_HEADERS,
         )
@@ -93,9 +95,4 @@ class StreamOwner:
     async def aclose(self) -> None:
         """Stop the producer, then close the run it may not have reached."""
         with CancelScope(shield=True):
-            try:
-                if self._stream is not None:
-                    await self._stream.aclose()
-            finally:
-                if self._run is not None:
-                    await self._run.aclose()
+            await self._resources.aclose()

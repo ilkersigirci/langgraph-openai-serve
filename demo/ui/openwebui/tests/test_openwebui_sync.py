@@ -3,36 +3,43 @@
 from copy import deepcopy
 
 import pytest
-from pydantic import ValidationError
 
 from lgos_openwebui import sync as sync_command
-from lgos_openwebui.sync import SyncSettings, admin_token, sync
+from lgos_openwebui.functions.generic.pipe import Pipe
+from lgos_openwebui.sync import admin_token, sync
 from tests.support import ADMIN_TOKEN, FakeOpenWebUI
 
 GATEWAY_URL = "http://gateway.internal:4000"
 
 
-def deployment(**values) -> SyncSettings:
-    return SyncSettings(
-        **{
-            "gateway_type": "litellm",
-            "gateway_url": GATEWAY_URL,
-            "model_prefix": "acme",
-            "mcp_connection_id": "acme-tools",
-            "function_id": "acme_pipe",
-            "include_demo_functions": False,
-            **values,
-        }
+def gateway_valves() -> Pipe.Valves:
+    return Pipe.Valves(
+        OPENAI_GATEWAY_TYPE="litellm",
+        OPENAI_GATEWAY_BASE_URL=GATEWAY_URL,
+        MODEL_PREFIX="acme",
+        MCP_GATEWAY_CONNECTION_ID="acme-tools",
     )
+
+
+def cli_arguments(*options: str) -> list[str]:
+    # .invalid never resolves, so a run that contacts Open WebUI fails with it.
+    return [
+        "--url=https://remote-webui.invalid",
+        "--gateway-type=litellm",
+        f"--gateway-url={GATEWAY_URL}",
+        *options,
+    ]
 
 
 async def test_sync_installs_the_pipe_with_its_gateway_but_no_credential():
     unrelated = {"id": "unrelated", "name": "Keep", "content": "external"}
     app = FakeOpenWebUI([deepcopy(unrelated)])
     async with app.client() as client:
-        assert await sync(client, deployment()) == {"acme_pipe": "created"}
+        result = await sync(client, gateway_valves(), function_id="acme_pipe")
+        assert result == {"acme_pipe": "created"}
         app.writes.clear()
-        assert await sync(client, deployment()) == {"acme_pipe": "unchanged"}
+        result = await sync(client, gateway_valves(), function_id="acme_pipe")
+        assert result == {"acme_pipe": "unchanged"}
         assert app.writes == []
 
     assert app.functions["unrelated"] == unrelated
@@ -49,9 +56,14 @@ async def test_sync_installs_the_pipe_with_its_gateway_but_no_credential():
 async def test_demo_functions_add_the_uservalves_example():
     app = FakeOpenWebUI([])
     async with app.client() as client:
-        await sync(client, deployment(include_demo_functions=True))
+        await sync(
+            client,
+            gateway_valves(),
+            function_id="acme_pipe",
+            include_demo_functions=True,
+        )
         # A later sync without the example keeps it, as it keeps other valves.
-        await sync(client, deployment())
+        await sync(client, gateway_valves(), function_id="acme_pipe")
 
     assert app.functions["uservalves_simple"]["is_active"] is True
     valves = app.functions["acme_pipe"]["valves"]
@@ -59,16 +71,17 @@ async def test_demo_functions_add_the_uservalves_example():
 
 
 @pytest.mark.parametrize(
-    "values",
-    [{"model_prefix": "acme/graphs"}, {"gateway_url": "not-a-url"}],
+    "option",
+    ["--model-prefix=acme/graphs", "--gateway-url=not-a-url"],
     ids=["invalid-prefix", "invalid-url"],
 )
-async def test_invalid_settings_write_nothing(values: dict):
-    app = FakeOpenWebUI([])
-    async with app.client() as client:
-        with pytest.raises(ValidationError):
-            await sync(client, deployment(**values))
-    assert app.writes == []
+def test_cli_rejects_invalid_settings_before_contacting_open_webui(
+    monkeypatch: pytest.MonkeyPatch, option: str
+):
+    monkeypatch.setenv("OPENWEBUI_API_KEY", ADMIN_TOKEN)
+
+    with pytest.raises(SystemExit, match="validation error for Valves"):
+        sync_command.main(cli_arguments(option))
 
 
 @pytest.mark.parametrize(
@@ -128,21 +141,14 @@ def test_cli_reports_why_open_webui_rejected_a_function(
     monkeypatch.setenv("OPENWEBUI_API_KEY", ADMIN_TOKEN)
     app = FakeOpenWebUI([], rejection="No module named 'plotly'")
 
-    async def run(url, settings, environ):
+    async def run(_url: str, valves: Pipe.Valves, **options) -> dict[str, str]:
+        # Connect the command to the fake service instead of its URL.
         async with app.client() as client:
-            return await sync(client, settings)
+            return await sync(client, valves, **options)
 
     monkeypatch.setattr(sync_command, "_run", run)
-    with pytest.raises(SystemExit) as exc:
-        sync_command.main(
-            [
-                "--url=https://remote-webui.example",
-                "--gateway-type=litellm",
-                f"--gateway-url={GATEWAY_URL}",
-            ]
-        )
-
-    assert "No module named 'plotly'" in str(exc.value)
+    with pytest.raises(SystemExit, match="No module named 'plotly'"):
+        sync_command.main(cli_arguments())
 
 
 def test_cli_rejects_an_unknown_gateway_type_before_contacting_open_webui(

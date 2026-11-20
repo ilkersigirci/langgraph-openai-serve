@@ -406,38 +406,70 @@ def _responses_request(
     return request
 
 
-async def _foreground_events(
+async def _response_updates(
     client: AsyncOpenAI,
     request: dict[str, Any],
-) -> AsyncGenerator[ResponseStreamEvent | Response, None]:
+    *,
+    streaming: bool,
+    provider_routing: bool,
+    on_status: Callable[[str], Awaitable[None]],
+) -> AsyncGenerator[str | Response, None]:
     """
-    Yield one foreground stream's events, then its final Response.
+    Run one Responses turn, reporting progress and commentary through ``on_status``.
 
     Yields:
-        Each event, then the SDK's assembled Response.
+        Live answer text, then the terminal Response used for citations and tools.
 
     """
-    async with client.responses.stream(**request) as stream:
-        async for event in stream:
-            yield event
-        yield await stream.get_final_response()
+    background = bool(request.get("background"))
+    if background:
+        stream = aclosing(
+            _background_events(client, request, provider_routing=provider_routing)
+        )
+    elif streaming:
+        stream = client.responses.stream(**request)
+    else:
+        yield await client.responses.create(**request)
+        return
+
+    commentary: set[int] = set()
+    async with stream as events:
+        async for event in events:
+            if isinstance(event, Response):
+                yield event
+                return
+            if (response := _terminal_response(event)) is not None:
+                yield response
+                return
+            match event.type:
+                case "response.created" | "response.in_progress" if background:
+                    await on_status(_background_status(event.response))
+                case "response.output_item.added" if (
+                    event.item.type == "message" and event.item.phase == "commentary"
+                ):
+                    commentary.add(event.output_index)
+                case "response.output_text.done" if (
+                    event.output_index in commentary and event.text
+                ):
+                    await on_status(event.text)
+                case "response.output_text.delta" | "response.refusal.delta" if (
+                    streaming and event.output_index not in commentary
+                ):
+                    yield event.delta
 
 
-async def _background_events(
+def _background_status(response: Response) -> str:
+    status = response.status or "unknown"
+    return f"Background response {status.replace('_', ' ')}."
+
+
+def _background_events(
     client: AsyncOpenAI,
     request: dict[str, Any],
-    on_status: Callable[[str], Awaitable[None]],
     *,
     provider_routing: bool,
 ) -> AsyncGenerator[ResponseStreamEvent | Response, None]:
-    """
-    Create one background Response and report its lifecycle.
-
-    Yields:
-        The events that report progress, then the final Response, unless the stream
-        closed before it named one.
-
-    """
+    """Configure the gateway's create, retrieve and cancel requests for one run."""
     client = client.with_options(max_retries=BACKGROUND_MAX_RETRIES)
     background_request = dict(request)
     idempotency_key = str(uuid.uuid4())
@@ -454,22 +486,13 @@ async def _background_events(
         background_request["extra_body"] = {
             "extra_headers": {"Idempotency-Key": idempotency_key}
         }
-    events = _followed_events(client, background_request, lifecycle_options)
-    async with aclosing(events):
-        async for event in events:
-            if not isinstance(event, Response) and (
-                event.type == "response.created"  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
-                or event.type == "response.in_progress"
-            ):
-                await on_status(event.response.status or "unknown")
-            else:
-                yield event
+    return _follow_background_stream(client, background_request, lifecycle_options)
 
 
-async def _followed_events(
+async def _follow_background_stream(
     client: AsyncOpenAI,
     request: dict[str, Any],
-    lifecycle_options: Mapping[str, Any],
+    lifecycle_options: dict[str, Any],
 ) -> AsyncGenerator[ResponseStreamEvent | Response, None]:
     """
     Follow one background Response from its creation.
@@ -480,16 +503,16 @@ async def _followed_events(
     Leaving early, as Stop does, cancels the run.
 
     Yields:
-        The events that report progress, then the final Response, unless the stream
-        closed before it named one.
+        Progress events, then the final Response, unless the stream closed before
+        it named one.
 
     """
     stream = await client.responses.create(**request, stream=True)
     response_id: str | None = None
     cursor = -1
-    response: Response | None = None
     try:  # ruff: ignore[too-many-statements-in-try-clause] - The whole lifecycle shares best-effort cancellation.
-        while response is None:
+        while True:
+            response = None
             events = _until_broken(stream)
             async with aclosing(events):
                 async for event in events:
@@ -500,22 +523,20 @@ async def _followed_events(
                     if response is not None:
                         break
                     yield event
-            if response is None:
-                if response_id is None:
-                    return
-                retrieved = await client.responses.retrieve(
-                    response_id, **lifecycle_options
-                )
-                if retrieved.status in ACTIVE_BACKGROUND_STATUSES:
-                    await asyncio.sleep(BACKGROUND_RESUME_SECONDS)
-                    stream = await client.responses.retrieve(
-                        response_id,
-                        stream=True,
-                        starting_after=cursor,
-                        **lifecycle_options,
-                    )
-                else:
-                    response = retrieved
+            if response is not None:
+                break
+            if response_id is None:
+                return
+            response = await client.responses.retrieve(response_id, **lifecycle_options)
+            if response.status not in ACTIVE_BACKGROUND_STATUSES:
+                break
+            await asyncio.sleep(BACKGROUND_RESUME_SECONDS)
+            stream = await client.responses.retrieve(
+                response_id,
+                stream=True,
+                starting_after=cursor,
+                **lifecycle_options,
+            )
     except (asyncio.CancelledError, GeneratorExit):
         if response_id is not None:
             await _cancel_background_response(client, response_id, lifecycle_options)
@@ -544,13 +565,11 @@ async def _until_broken(
 
 
 def _terminal_response(event: ResponseStreamEvent) -> Response | None:
-    if (
-        event.type == "response.completed"  # ruff: ignore[repeated-equality-comparison] - Explicit comparisons preserve discriminated-union narrowing in ty.
-        or event.type == "response.failed"
-        or event.type == "response.incomplete"
-    ):
-        return event.response
-    return None
+    match event.type:
+        case "response.completed" | "response.failed" | "response.incomplete":
+            return event.response
+        case _:
+            return None
 
 
 async def _cancel_background_response(

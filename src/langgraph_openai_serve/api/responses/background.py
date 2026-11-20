@@ -9,19 +9,14 @@ from contextlib import aclosing
 
 from anyio import EndOfStream, move_on_after, sleep_forever
 from anyio.streams.memory import MemoryObjectReceiveStream
-from openai.types.responses import (
-    Response,
-    ResponseCompletedEvent,
-    ResponseFailedEvent,
-    ResponseIncompleteEvent,
-    ResponseStreamEvent,
-)
+from openai.types.responses import Response
 from pydantic import BaseModel
 
 from langgraph_openai_serve.api.responses.events import (
     BACKGROUND_ACCEPTED_EVENTS,
     background_accepted_events,
     encode_event,
+    terminal_event,
 )
 from langgraph_openai_serve.api.responses.interrupts import interrupt_response_nonce
 from langgraph_openai_serve.api.responses.request import decode_responses_request
@@ -144,66 +139,64 @@ async def follow_background_response(
         Named, compact Responses SSE frames.
 
     """
-    # The run may wait in the engine's queue, and the client needs the ID to cancel
-    # or resume it.
-    for accepted in background_accepted_events(run.queued_snapshot()):
-        if starting_after is None or accepted.sequence_number > starting_after:
-            yield encode_event(accepted)
-    delivered = max(starting_after or 0, BACKGROUND_ACCEPTED_EVENTS - 1)
-    published = TaskStream(background.events(run.id), name="background-events")
-    frames = _frames(run.id, background, published.receive, delivered)
-    try:
-        async with aclosing(frames):
-            async for frame in frames:
-                yield frame
-    finally:
-        await published.aclose()
+    cursor = -1 if starting_after is None else starting_after
+    for event in background_accepted_events(run.queued_snapshot()):
+        if event.sequence_number > cursor:
+            yield encode_event(event)
+
+    async with aclosing(_published_frames(run.id, background, cursor)) as frames:
+        async for frame in frames:
+            yield frame
 
 
-async def _frames(
-    run_id: str,
-    background: BackgroundBackend,
-    published: MemoryObjectReceiveStream[str],
-    delivered: int,
+async def _published_frames(
+    run_id: str, background: BackgroundBackend, cursor: int
 ) -> AsyncGenerator[str, None]:
     """
-    Yield the events after ``delivered``, then the frame that ends the stream.
+    Follow the contiguous worker log, using the stored result if it stops early.
 
     Yields:
-        Named, compact Responses SSE frames.
+        SSE frames after the client's cursor.
 
     """
+    next_sequence = BACKGROUND_ACCEPTED_EVENTS
     finished = False
-    while True:
-        payload = await _next_event(published)
-        if payload is None:
+    async with aclosing(
+        TaskStream(background.events(run_id), name="background-events")
+    ) as published:
+        while True:
+            payload = await _next_event(published.receive)
+            if payload is not None:
+                event = _PublishedEvent.model_validate_json(payload)
+                # Clients assemble deltas in order. After a gap, only the stored
+                # terminal Response can supply a complete result.
+                if event.sequence_number != next_sequence:
+                    continue
+                next_sequence += 1
+                if event.sequence_number > cursor:
+                    yield f"event: {event.type}\ndata: {payload}\n\n"
+                if event.type in _TERMINAL_EVENT_TYPES:
+                    return
+                continue
+
             try:
-                run = await background.get(run_id)
+                current = await background.get(run_id)
             except Exception:
-                # The engine may recover, and the client's stream can wait for it.
                 logger.warning("background.status_unavailable", exc_info=True)
                 continue
-            if run is None:
+            if current is None:
                 return
-            if run.status in {"queued", "in_progress"}:
+            if current.status in {"queued", "in_progress"}:
                 continue
+            # Stored events can arrive after the engine reports completion.
+            # Give them one further quiet interval before closing the stream.
             if finished:
-                yield encode_event(_terminal_event(run.snapshot(), delivered + 1))
+                # The client may have seen events we can no longer read.
+                yield encode_event(
+                    terminal_event(current.snapshot(), max(next_sequence, cursor + 1))
+                )
                 return
-            # A worker stores its events before it finishes, so a finished run's
-            # may still be on their way. Only a further quiet check proves that
-            # none will follow, and the log keeps its own sequence numbers.
             finished = True
-            continue
-        event = _PublishedEvent.model_validate_json(payload)
-        # Only the next event is delivered: a replay's earlier ones are skipped, and
-        # clients assemble items from a gapless stream, so a lost event ends the
-        # following. The final Response still arrives from the run's status.
-        if event.sequence_number == delivered + 1:
-            delivered = event.sequence_number
-            yield f"event: {event.type}\ndata: {payload}\n\n"
-            if event.type in _TERMINAL_EVENT_TYPES:
-                return
 
 
 async def _next_event(published: MemoryObjectReceiveStream[str]) -> str | None:
@@ -239,33 +232,6 @@ async def cancel_background_response(
         if run.status in {"queued", "in_progress"}:
             run = run.model_copy(update={"status": "cancelled"})
     return run.snapshot()
-
-
-def _terminal_event(response: Response, sequence_number: int) -> ResponseStreamEvent:
-    """
-    Return the event that ends a stream with a stored Response.
-
-    OpenAI defines no event for a cancelled Response and leaves its stream open,
-    while a gateway reports a stream that ends without a terminal event as broken.
-    A cancelled Response therefore arrives in ``response.failed``, with its status.
-    """
-    if response.status == "completed":
-        return ResponseCompletedEvent(
-            type="response.completed",
-            sequence_number=sequence_number,
-            response=response,
-        )
-    if response.status == "incomplete":
-        return ResponseIncompleteEvent(
-            type="response.incomplete",
-            sequence_number=sequence_number,
-            response=response,
-        )
-    return ResponseFailedEvent(
-        type="response.failed",
-        sequence_number=sequence_number,
-        response=response,
-    )
 
 
 def _job(

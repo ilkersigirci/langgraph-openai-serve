@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import get_args
 
 import httpx
@@ -12,18 +11,6 @@ import httpx
 from .functions.generic.gateway import GatewayType
 from .functions.generic.pipe import Pipe
 from .install import function_specs, install_functions
-
-
-@dataclass(frozen=True)
-class SyncSettings:
-    """The gateway the Pipe uses and the Functions to install."""
-
-    gateway_type: str
-    gateway_url: str
-    model_prefix: str
-    mcp_connection_id: str
-    function_id: str
-    include_demo_functions: bool
 
 
 async def admin_token(client: httpx.AsyncClient, environ: Mapping[str, str]) -> str:
@@ -51,44 +38,47 @@ async def admin_token(client: httpx.AsyncClient, environ: Mapping[str, str]) -> 
     return session["token"]
 
 
-async def sync(client: httpx.AsyncClient, settings: SyncSettings) -> dict[str, str]:
+async def sync(
+    client: httpx.AsyncClient,
+    valves: Pipe.Valves,
+    *,
+    function_id: str,
+    include_demo_functions: bool = False,
+) -> dict[str, str]:
     """
     Install the Functions with an admin's ``client`` and set the Pipe's valves.
 
-    The valves hold no credential: the Pipe authenticates like Open WebUI's own
-    OpenAI connection to the gateway. Invalid settings fail before anything is
-    written.
+    Only the fields set on ``valves`` are written, and Open WebUI keeps the
+    others. They hold no credential: the Pipe authenticates like Open WebUI's
+    own OpenAI connection to the gateway.
     """
-    valves = Pipe.Valves.model_validate(
-        {
-            "OPENAI_GATEWAY_TYPE": settings.gateway_type,
-            "OPENAI_GATEWAY_BASE_URL": settings.gateway_url,
-            "MODEL_PREFIX": settings.model_prefix,
-            "MCP_GATEWAY_CONNECTION_ID": settings.mcp_connection_id,
-            # Without the example, its valve is kept like every valve not set here.
-            **(
-                {"USERVALVES_GRAPH_MODEL_ID": f"{settings.model_prefix}/simple-graph"}
-                if settings.include_demo_functions
-                else {}
-            ),
-        }
-    )
+    if include_demo_functions:
+        valves = valves.model_copy(
+            update={"USERVALVES_GRAPH_MODEL_ID": f"{valves.MODEL_PREFIX}/simple-graph"}
+        )
     return await install_functions(
         client,
         function_specs(
-            settings.function_id,
+            function_id,
             valves=valves.model_dump(mode="json", exclude_unset=True),
-            include_demo_functions=settings.include_demo_functions,
+            include_demo_functions=include_demo_functions,
         ),
     )
 
 
 async def _run(
-    url: str, settings: SyncSettings, environ: Mapping[str, str]
+    url: str, valves: Pipe.Valves, *, function_id: str, include_demo_functions: bool
 ) -> dict[str, str]:
     async with httpx.AsyncClient(base_url=url, timeout=30) as client:
-        client.headers["Authorization"] = f"Bearer {await admin_token(client, environ)}"
-        return await sync(client, settings)
+        client.headers["Authorization"] = (
+            f"Bearer {await admin_token(client, os.environ)}"
+        )
+        return await sync(
+            client,
+            valves,
+            function_id=function_id,
+            include_demo_functions=include_demo_functions,
+        )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -144,16 +134,22 @@ def main(argv: list[str] | None = None) -> None:
         parser.error(
             "set OPENWEBUI_API_KEY, or OPENWEBUI_ADMIN_EMAIL and OPENWEBUI_ADMIN_PASSWORD"
         )
-    settings = SyncSettings(
-        gateway_type=args.gateway_type,
-        gateway_url=args.gateway_url,
-        model_prefix=args.model_prefix,
-        mcp_connection_id=args.mcp_connection_id,
-        function_id=args.function_id,
-        include_demo_functions=args.include_demo_functions,
-    )
     try:
-        results = asyncio.run(_run(args.url, settings, environ))
+        # Invalid settings fail here, before Open WebUI is contacted.
+        valves = Pipe.Valves(
+            OPENAI_GATEWAY_TYPE=args.gateway_type,
+            OPENAI_GATEWAY_BASE_URL=args.gateway_url,
+            MODEL_PREFIX=args.model_prefix,
+            MCP_GATEWAY_CONNECTION_ID=args.mcp_connection_id,
+        )
+        results = asyncio.run(
+            _run(
+                args.url,
+                valves,
+                function_id=args.function_id,
+                include_demo_functions=args.include_demo_functions,
+            )
+        )
     except httpx.HTTPStatusError as exc:
         # Open WebUI explains a rejected Function, such as a failed import.
         msg = f"Open WebUI sync failed: {exc}\n{exc.response.text}"

@@ -1,29 +1,27 @@
 """Run LangGraph workflows from protocol-neutral requests and messages."""
 
 import asyncio
-from collections.abc import AsyncGenerator, Collection
+from collections.abc import AsyncGenerator
 from contextlib import aclosing, suppress
 from typing import Any, Generic, TypeVar, cast
 
 from anyio import CancelScope, create_memory_object_stream
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langgraph.types import (
-    Command,
     CustomStreamPart,
     Interrupt,
     StreamMode,
     StreamPart,
     UpdatesStreamPart,
+    ValuesStreamPart,
 )
 from opentelemetry import trace
 from opentelemetry.trace import NonRecordingSpan
 
-from langgraph_openai_serve.core.errors import GraphError
 from langgraph_openai_serve.graph import interrupt
 from langgraph_openai_serve.graph.graph_registry import GraphRegistry
 from langgraph_openai_serve.graph.request import GraphRequest
 from langgraph_openai_serve.graph.run import GraphRun, prepare_run
-from langgraph_openai_serve.graph.telemetry import invoke_workflow
 
 LangGraphOutput = AIMessage | interrupt.LangGraphInterruptBatch
 """A run's result: its final message, or the interrupts that paused it."""
@@ -31,7 +29,6 @@ LangGraphOutput = AIMessage | interrupt.LangGraphInterruptBatch
 LangGraphStreamEvent = str | LangGraphOutput | CustomStreamPart | UpdatesStreamPart
 """One streamed item: a text delta, a native LangGraph part, or the run's result."""
 
-_MISSING = object()
 _Item = TypeVar("_Item")
 
 
@@ -101,8 +98,7 @@ async def run_langgraph(
         resume=resume,
         checkpoint_scope=checkpoint_scope,
     )
-    async with run:
-        return await collect_run(run)
+    return await collect_run(run)
 
 
 async def run_langgraph_stream(
@@ -127,11 +123,9 @@ async def run_langgraph_stream(
         resume=resume,
         checkpoint_scope=checkpoint_scope,
     )
-    async with run:
-        events = stream_run(run)
-        async with aclosing(events):
-            async for event in events:
-                yield event
+    async with aclosing(stream_run(run)) as events:
+        async for event in events:
+            yield event
 
 
 async def collect_run(run: GraphRun) -> LangGraphOutput:
@@ -152,7 +146,7 @@ async def stream_run(
     stream_updates: bool = False,
 ) -> AsyncGenerator[LangGraphStreamEvent, None]:
     """
-    Execute a prepared run, ending with its final output.
+    Execute and close a prepared run, ending with its final output.
 
     Args:
         run: The prepared run.
@@ -166,7 +160,6 @@ async def stream_run(
         ``LangGraphInterruptBatch``.
 
     """
-    run.begin_execution()
     # Without streaming, request only root values, exactly like ainvoke().
     stream_mode: list[StreamMode] = ["values"]
     if streaming:
@@ -174,8 +167,8 @@ async def stream_run(
     if stream_updates:
         stream_mode.append("updates")
 
-    with invoke_workflow(run.request) as span:
-        final_output: Any = _MISSING
+    async with run.execution() as span:
+        root_values: ValuesStreamPart[Any] | None = None
         interrupts: dict[str, Interrupt] = {}
         # LangGraph implements astream as an async generator, while its overload
         # returns AsyncIterator. Keep the concrete type so cancellation closes it.
@@ -202,36 +195,34 @@ async def stream_run(
         graph_parent = NonRecordingSpan(span.get_span_context())
         with trace.use_span(graph_parent), run.langfuse_attributes():
             parts = TaskStream(graph_stream, name="langgraph-astream")
-        try:
+        async with aclosing(parts):
             async for part in parts.receive:
                 if part["type"] == "values":
                     if not part["ns"]:
-                        final_output = part["data"]
+                        root_values = part
                         interrupts.update(
                             (item.id, item) for item in part["interrupts"]
                         )
                 elif (event := _visible_event(part)) is not None:
                     yield event
-        finally:
-            await parts.aclose()
 
         output: LangGraphOutput
         if interrupts:
-            output = _interrupt_batch(run, interrupts.values())
-        elif final_output is _MISSING:
+            output = run.pause(tuple(interrupts.values()))
+        elif root_values is None:
             msg = "LangGraph stream completed without a final value."
             raise RuntimeError(msg)
         else:
             with trace.use_span(graph_parent):
-                message = await run.config.render_output(final_output)
+                message = await run.config.render_output(root_values["data"])
             usage = run.usage_metadata()
             output = (
                 message.model_copy(update={"usage_metadata": usage})
                 if usage
                 else message
             )
-    # The run ends with its output; the consumer's handling of it is not part of
-    # the workflow.
+    # The run is closed before its output is yielded: a consumer can resume a
+    # paused run at once, and its handling is not part of the workflow.
     yield output
 
 
@@ -244,27 +235,6 @@ def _visible_event(part: StreamPart[Any, Any]) -> LangGraphStreamEvent | None:
     if part["type"] in {"custom", "updates"}:
         return cast("CustomStreamPart | UpdatesStreamPart", part)
     return None
-
-
-def _interrupt_batch(
-    run: GraphRun,
-    interrupts: Collection[Interrupt],
-) -> interrupt.LangGraphInterruptBatch:
-    if run.interrupt is None:
-        msg = "Graphs using interrupt() must declare GraphFeature.INTERRUPTS."
-        raise GraphError(msg)
-    # LangGraph gives every interrupt() of one node invocation the same ID, so
-    # a second call would reuse the answered call ID and accept stale answers.
-    if (
-        isinstance(run.inputs, Command)
-        and isinstance(run.inputs.resume, dict)
-        and set(run.inputs.resume).intersection(item.id for item in interrupts)
-    ):
-        msg = "A graph node may call interrupt() only once per invocation."
-        raise GraphError(msg)
-    batch = interrupt.interrupt_batch(interrupts, run.interrupt.run_id)
-    run.keep_checkpoint()
-    return batch
 
 
 __all__ = [

@@ -133,9 +133,9 @@ intermediate updates.
 
     When `background=true`, the HTTP request validates the request, submits it
     to the background engine, and returns without invoking the graph. The
-    worker runs the non-streaming foreground path above, so interrupts and
-    output rendering behave the same. See [Run Responses In The
-    Background](../how-to-guides/background-responses.md).
+    worker runs the foreground path above that matches the request's `stream`
+    value, so interrupts and output rendering behave the same. See
+    [Run Responses In The Background](../how-to-guides/background-responses.md).
 
 Internal model calls that must not reach the assistant text stream carry
 LangGraph's `nostream` tag, for example `ChatOpenAI(..., tags=[TAG_NOSTREAM])`
@@ -199,7 +199,8 @@ request types.
 
 `run_langgraph()` returns the final `AIMessage` or `LangGraphInterruptBatch`
 directly. The streaming helper yields text and custom events followed by that
-same output type. Both helpers prepare the run and close it when they finish.
+same output type. Both helpers prepare the run and close it before they return
+or yield that output, so a caller can resume a paused run at once.
 
 When continuing a paused run, pass the decoded `InterruptResume` as `resume=`.
 Pass a server-trusted `checkpoint_scope=` consistently on the initial invocation

@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from contextlib import asynccontextmanager
+from contextlib import aclosing, asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +24,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph
 from langgraph.types import interrupt
 
-from langgraph_openai_serve.core.errors import GraphError
+from langgraph_openai_serve.core.errors import GraphError, InvalidRequestError
 from langgraph_openai_serve.graph.features import GraphFeature
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.interrupt import (
@@ -170,6 +170,32 @@ async def test_interrupt_result_is_returned_before_output_rendering(
     assert isinstance(batch, LangGraphInterruptBatch)
     assert len(batch.interrupts) == 1
     assert batch.interrupts[0].value == DEFAULT_INTERRUPT_PAYLOAD
+
+
+async def test_streamed_pause_can_be_resumed_while_consuming_its_final_item(
+    make_request,
+    sqlite_checkpointer: AsyncSqliteSaver,
+) -> None:
+    registry = GraphRegistry(
+        graphs={
+            "review": GraphConfig(
+                graph=make_interrupt_graph(checkpointer=sqlite_checkpointer),
+                description="Review",
+                features={GraphFeature.INTERRUPTS},
+            )
+        },
+        run_coordinator=InMemoryRunCoordinator(),
+    )
+    request = make_request("review")
+    events = run_langgraph_stream(request, [HumanMessage(content="question")], registry)
+    async with aclosing(events):
+        pause = await anext(events)
+        assert isinstance(pause, LangGraphInterruptBatch)
+        answer = InterruptResume(pause.run_id, {pause.interrupts[0].id: "yes"})
+        result = await run_langgraph(request, [], registry, resume=answer)
+
+    assert isinstance(result, AIMessage)
+    assert result.content == "resumed:yes"
 
 
 @pytest.mark.parametrize("stream", [False, True], ids=["collect", "stream"])
@@ -446,6 +472,21 @@ def test_interrupt_enabled_graph_requires_checkpointer() -> None:
             graph=make_message_graph("ok"),
             description="DUMMY",
             features={GraphFeature.INTERRUPTS},
+        )
+
+
+async def test_resume_cannot_start_a_stateless_graph(make_request) -> None:
+    registry = GraphRegistry(
+        graphs={
+            "plain": GraphConfig(graph=make_message_graph("new"), description="DUMMY")
+        }
+    )
+    with pytest.raises(InvalidRequestError, match="does not support interrupt resumes"):
+        await run_langgraph(
+            make_request("plain"),
+            [],
+            registry,
+            resume=InterruptResume(run_id="paused", values={"call": "approve"}),
         )
 
 

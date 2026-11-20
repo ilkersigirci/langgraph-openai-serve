@@ -136,19 +136,17 @@ class GraphConfig(BaseModel):
     async def render_output(self, output: Any) -> AIMessage:
         """Convert native graph output into the final assistant message."""
         if self.output_to_message is not None:
-            return await _maybe_await(self.output_to_message(output))
-
-        messages = (
-            output["messages"]
-            if isinstance(output, Mapping)
-            else getattr(output, "messages", None)
-        )
-        if messages is None:
-            msg = "Graph output must expose a messages field."
-            raise GraphError(msg)
-        if not messages:
-            return AIMessage(content="")
-        message = messages[-1]
+            message = await _maybe_await(self.output_to_message(output))
+        else:
+            messages = (
+                output.get("messages")
+                if isinstance(output, Mapping)
+                else getattr(output, "messages", None)
+            )
+            if messages is None:
+                msg = "Graph output must expose a messages field."
+                raise GraphError(msg)
+            message = messages[-1] if messages else AIMessage(content="")
         if not isinstance(message, AIMessage):
             msg = "The final graph message must be an AIMessage."
             raise GraphError(msg)

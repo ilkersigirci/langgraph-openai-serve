@@ -1,4 +1,6 @@
+from contextlib import aclosing
 from dataclasses import dataclass
+from operator import itemgetter
 
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
@@ -6,7 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import StateGraph
 from langgraph.runtime import Runtime
 
-from langgraph_openai_serve import GraphRequest
+from langgraph_openai_serve import GraphError, GraphRequest
 from langgraph_openai_serve.graph.graph_registry import GraphConfig, GraphRegistry
 from langgraph_openai_serve.graph.runner import run_langgraph, run_langgraph_stream
 from tests.graph.support.schemas import (
@@ -22,6 +24,37 @@ from tests.graph.support.schemas import (
 @dataclass
 class UserContext:
     user_id: str
+
+
+@pytest.mark.parametrize(
+    "renderer",
+    [None, itemgetter("answer")],
+    ids=["missing-messages", "renderer-returns-plain-text"],
+)
+async def test_unservable_output_fails_before_reaching_stream_consumer(
+    make_request, renderer
+) -> None:
+    graph = (
+        StateGraph(QuestionState, output_schema=AnswerOutput)
+        .add_node("answer", lambda state: {"answer": state["question"]})
+        .set_entry_point("answer")
+        .set_finish_point("answer")
+        .compile()
+    )
+    registry = GraphRegistry(
+        {
+            "test": GraphConfig(
+                graph=graph,
+                description="Text output",
+                request_to_input=lambda _request, _messages: {"question": "hi"},
+                output_to_message=renderer,
+            )
+        }
+    )
+    stream = run_langgraph_stream(make_request("test"), [], registry)
+    async with aclosing(stream):
+        with pytest.raises(GraphError):
+            await anext(stream)
 
 
 @pytest.mark.parametrize("stream", [False, True])

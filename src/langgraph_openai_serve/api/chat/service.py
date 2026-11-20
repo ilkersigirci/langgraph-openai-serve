@@ -44,8 +44,7 @@ async def generate_completion(
     chat_request: ChatCompletionRequest, run: GraphRun
 ) -> ChatCompletion:
     """Generate a chat completion."""
-    async with run:
-        output = await collect_run(run)
+    output = await collect_run(run)
     if not isinstance(output, AIMessage):
         msg = "The graph returned an unsupported Chat Completions output."
         raise GraphError(msg)
@@ -83,19 +82,18 @@ async def _generate_stream_chunks(
     response_builder: ChatCompletionStreamResponseBuilder,
     run: GraphRun,
 ) -> AsyncGenerator[str, None]:
-    async with run:
-        yield response_builder.role()
+    yield response_builder.role()
 
-        final_message: AIMessage | None = None
-        text_parts: list[str] = []
-        run_stream = stream_run(run)
-        async with aclosing(run_stream):
-            async for event in run_stream:
-                if isinstance(event, AIMessage):
-                    final_message = event
-                elif isinstance(event, str):
-                    text_parts.append(event)
-                    yield response_builder.text(event)
+    final_message: AIMessage | None = None
+    text_parts: list[str] = []
+    run_stream = stream_run(run)
+    async with aclosing(run_stream):
+        async for event in run_stream:
+            if isinstance(event, AIMessage):
+                final_message = event
+            elif isinstance(event, str):
+                text_parts.append(event)
+                yield response_builder.text(event)
 
     if final_message is None:
         msg = "The graph returned an unsupported Chat Completions output."

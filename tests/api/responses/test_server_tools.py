@@ -690,6 +690,39 @@ async def test_repeated_server_tool_call_id_fails(
         )
 
 
+async def test_final_function_cannot_reuse_a_server_call_id(
+    openai_client: AsyncOpenAI, graph_registry: GraphRegistry
+) -> None:
+    async def answer(_state: MessagesState):
+        return {
+            "messages": [
+                AIMessage(content="", tool_calls=[CALL]),
+                ToolMessage(content="1.0", tool_call_id="call_package"),
+                AIMessage(
+                    content="",
+                    tool_calls=[{"id": "call_package", "name": "save", "args": {}}],
+                ),
+            ]
+        }
+
+    _register_single_node(
+        graph_registry, "package", answer, server_tools={"package_version"}
+    )
+    response, _ = await _create(
+        openai_client,
+        model="package",
+        input="Save the version.",
+        tools=[*PACKAGE_TOOLS, {"type": "function", "name": "save"}],
+        stream=True,
+    )
+
+    assert response.status == "failed"
+    assert [item.type for item in response.output] == [
+        "custom_tool_call",
+        "custom_tool_call_output",
+    ]
+
+
 @pytest.mark.parametrize("stream", [False, True])
 async def test_unfinished_server_execution_fails(
     openai_client: AsyncOpenAI,

@@ -1,10 +1,9 @@
 """Prepare and execute graph runs for OpenAI Responses."""
 
-from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import aclosing
 
 from langchain_core.messages import AIMessage
-from langgraph.types import CustomStreamPart, UpdatesStreamPart
 from openai.types.responses import (
     Response,
     ResponseCompletedEvent,
@@ -69,12 +68,13 @@ async def collect_response(
     Build one Response from the graph's durable output.
 
     A background Response passes the identity it was accepted with. With
-    ``publish``, the run streams and each event is handed to it, so a client can
-    follow the run from another process.
+    ``publish``, each event is also available to readers in another process.
     """
+    # Executing closes the run, but a cancel can stop the job while it awaits
+    # the publish of an opening event, before execution starts.
     async with run:
         events = _response_events(
-            _builder(request, run, context), run, streaming=publish is not None
+            _builder(request, run, context), run, streaming=bool(request.stream)
         )
         async with aclosing(events):
             async for event in events:
@@ -98,15 +98,14 @@ async def stream_response(
 
     """
     builder = _builder(request, run)
-    events = _response_events(builder, run, streaming=True)
     try:
-        async with aclosing(events):
+        async with aclosing(_response_events(builder, run, streaming=True)) as events:
             async for event in events:
                 yield encode_event(event)
     except Exception:
         logger.exception("responses.stream_failed")
-        for response_event in builder.failure("Internal server error"):
-            yield encode_event(response_event)
+        for event in builder.failure("Internal server error"):
+            yield encode_event(event)
 
 
 def _builder(
@@ -136,45 +135,27 @@ async def _response_events(
         The successful Response lifecycle.
 
     """
-    final_output: AIMessage | LangGraphInterruptBatch | None = None
-    async with run:
-        for event in builder.opening():
-            yield event
-
-        run_events = stream_run(
-            run,
-            streaming=streaming,
-            stream_updates=bool(run.request.server_tools),
-        )
-        async with aclosing(run_events):
-            async for graph_event in run_events:
-                if isinstance(graph_event, (AIMessage, LangGraphInterruptBatch)):
-                    final_output = graph_event
-                    continue
-                for event in _graph_response_events(builder, graph_event):
-                    yield event
-
-    if isinstance(final_output, LangGraphInterruptBatch):
-        terminal = builder.finish_interrupt(
-            final_output,
-            usage=response_usage(run.usage_metadata()),
-        )
-    elif final_output is not None:
-        terminal = builder.finish(final_output)
-    else:
-        msg = "LangGraph stream completed without a final assistant message."
-        raise RuntimeError(msg)
-    for event in terminal:
+    for event in builder.opening():
         yield event
 
-
-def _graph_response_events(
-    builder: ResponsesEventBuilder,
-    event: str | CustomStreamPart | UpdatesStreamPart,
-) -> Iterator[ResponseStreamEvent]:
-    if isinstance(event, str):
-        yield from builder.final_delta(event)
-    elif event["type"] == "updates":
-        yield from builder.server_tools(event)
-    elif (description := status_description(event["data"])) is not None:
-        yield from builder.commentary(description)
+    run_events = stream_run(
+        run, streaming=streaming, stream_updates=bool(run.request.server_tools)
+    )
+    async with aclosing(run_events):
+        async for part in run_events:
+            if isinstance(part, AIMessage):
+                events = builder.finish(part)
+            elif isinstance(part, LangGraphInterruptBatch):
+                events = builder.finish_interrupt(
+                    part, usage=response_usage(run.usage_metadata())
+                )
+            elif isinstance(part, str):
+                events = builder.final_delta(part)
+            elif part["type"] == "updates":
+                events = builder.server_tools(part)
+            elif (description := status_description(part["data"])) is not None:
+                events = builder.commentary(description)
+            else:
+                continue
+            for event in events:
+                yield event
